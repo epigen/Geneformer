@@ -91,6 +91,8 @@ def get_embs(
         minibatch_length = lengths[i:max_range]
 
         max_len = max(minibatch_length)
+        if isinstance(max_len, torch.Tensor):
+            max_len = max_len.item()
         original_lens = minibatch_length.clone()
 
         minibatch_input_data = pad_tensor_list(
