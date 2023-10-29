@@ -95,6 +95,7 @@ def get_embs(
             max_len = max_len.item()
         original_lens = minibatch_length.clone()
 
+        # TODO no need to run pad_tensor_list here anymore as we anyways require padded tensors
         minibatch_input_data = pad_tensor_list(
             input_ids[i:max_range], max_len, pad_token_id, model_input_size
         )
