@@ -86,7 +86,9 @@ def get_embs(
         # initiate tdigests for # of emb dims
         embs_tdigests = [TDigest() for _ in range(emb_dims)]
 
-    for i in trange(0, total_batch_length, forward_batch_size):
+    if forward_batch_size <= 0:
+        forward_batch_size = total_batch_length
+    for i in range(0, total_batch_length, forward_batch_size):
         max_range = min(i + forward_batch_size, total_batch_length)
         minibatch_length = lengths[i:max_range]
 
