@@ -102,11 +102,10 @@ def get_embs(
             input_ids[i:max_range], max_len, pad_token_id, model_input_size
         )
 
-        with torch.no_grad():
-            outputs = model(
-                input_ids=minibatch_input_data.to("cuda"),
-                attention_mask=gen_attention_mask({"length": minibatch_length}),
-            )
+        outputs = model(
+            input_ids=minibatch_input_data.to("cuda"),
+            attention_mask=gen_attention_mask({"length": minibatch_length}),
+        )
 
         embs_i = outputs.hidden_states[layer_to_quant]
 
