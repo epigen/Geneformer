@@ -22,13 +22,13 @@ from pathlib import Path
 import logging
 
 import warnings
+
 warnings.filterwarnings("ignore", message=".*The 'nopython' keyword.*")
 
 import anndata as ad
 import loompy as lp
 import numpy as np
 import scipy.sparse as sp
-from datasets import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,10 @@ class TranscriptomeTokenizer:
         tokenized_cells, cell_metadata = self.tokenize_files(
             Path(data_directory), file_format
         )
-        tokenized_dataset = self.create_dataset(tokenized_cells, cell_metadata, use_generator=use_generator)
+        raise NotImplementedError("We don't use the Dataset class")
+        tokenized_dataset = self.create_dataset(
+            tokenized_cells, cell_metadata, use_generator=use_generator
+        )
 
         output_path = (Path(output_directory) / output_prefix).with_suffix(".dataset")
         tokenized_dataset.save_to_disk(output_path)
@@ -140,7 +143,9 @@ class TranscriptomeTokenizer:
         tokenized_cells = []
         if self.custom_attr_name_dict is not None:
             cell_attr = [attr_key for attr_key in self.custom_attr_name_dict.keys()]
-            cell_metadata = {attr_key: [] for attr_key in self.custom_attr_name_dict.values()}
+            cell_metadata = {
+                attr_key: [] for attr_key in self.custom_attr_name_dict.values()
+            }
 
         # loops through directories to tokenize .loom files
         file_found = 0
@@ -155,13 +160,16 @@ class TranscriptomeTokenizer:
             tokenized_cells += file_tokenized_cells
             if self.custom_attr_name_dict is not None:
                 for k in cell_attr:
-                    cell_metadata[self.custom_attr_name_dict[k]] += file_cell_metadata[k]
+                    cell_metadata[self.custom_attr_name_dict[k]] += file_cell_metadata[
+                        k
+                    ]
             else:
                 cell_metadata = None
 
         if file_found == 0:
             logger.error(
-                f"No .{file_format} files found in directory {data_directory}.")
+                f"No .{file_format} files found in directory {data_directory}."
+            )
             raise
         return tokenized_cells, cell_metadata
 
@@ -195,23 +203,21 @@ class TranscriptomeTokenizer:
             var_exists = True
 
         if var_exists:
-            filter_pass_loc = np.where(
-                [i == 1 for i in adata.obs["filter_pass"]]
-            )[0]
+            filter_pass_loc = np.where([i == 1 for i in adata.obs["filter_pass"]])[0]
         elif not var_exists:
-            print(
-                f"{adata_file_path} has no column attribute 'filter_pass'; tokenizing all cells."
-            )
+            # print(
+            #     f"{adata_file_path} has no column attribute 'filter_pass'; tokenizing all cells."
+            # )
             filter_pass_loc = np.array([i for i in range(adata.shape[0])])
 
         tokenized_cells = []
 
         for i in range(0, len(filter_pass_loc), chunk_size):
-            idx = filter_pass_loc[i:i+chunk_size]
+            idx = filter_pass_loc[i : i + chunk_size]
 
-            n_counts = adata[idx].obs['n_counts'].values[:, None]
+            n_counts = adata[idx].obs["n_counts"].values[:, None]
             X_view = adata[idx, coding_miRNA_loc].X
-            X_norm = (X_view / n_counts * target_sum / norm_factor_vector)
+            X_norm = X_view / n_counts * target_sum / norm_factor_vector
             X_norm = sp.csr_matrix(X_norm)
 
             tokenized_cells += [
@@ -259,18 +265,16 @@ class TranscriptomeTokenizer:
                 var_exists = True
 
             if var_exists:
-                filter_pass_loc = np.where(
-                    [i == 1 for i in data.ca["filter_pass"]]
-                )[0]
+                filter_pass_loc = np.where([i == 1 for i in data.ca["filter_pass"]])[0]
             elif not var_exists:
-                print(
-                    f"{loom_file_path} has no column attribute 'filter_pass'; tokenizing all cells."
-                )
+                # print(
+                #     f"{loom_file_path} has no column attribute 'filter_pass'; tokenizing all cells."
+                # )
                 filter_pass_loc = np.array([i for i in range(data.shape[1])])
 
             # scan through .loom files and tokenize cells
             tokenized_cells = []
-            for (_ix, _selection, view) in data.scan(items=filter_pass_loc, axis=1):
+            for _ix, _selection, view in data.scan(items=filter_pass_loc, axis=1):
                 # select subview with protein-coding and miRNA genes
                 subview = view.view[coding_miRNA_loc, :]
 
@@ -296,22 +300,6 @@ class TranscriptomeTokenizer:
                     file_cell_metadata = None
 
         return tokenized_cells, file_cell_metadata
-
-    def create_dataset(self, tokenized_cells, cell_metadata, use_generator=False):
-        print("Creating dataset.")
-        # create dict for dataset creation
-        dataset_dict = {"input_ids": tokenized_cells}
-        if self.custom_attr_name_dict is not None:
-            dataset_dict.update(cell_metadata)
-
-        # create dataset
-        if use_generator:
-            def dict_generator():
-                for i in range(len(tokenized_cells)):
-                    yield {k: dataset_dict[k][i] for k in dataset_dict.keys()}
-            output_dataset = Dataset.from_generator(dict_generator, num_proc=self.nproc)
-        else:
-            output_dataset = Dataset.from_dict(dataset_dict)
 
         # truncate dataset
         def truncate(example):
