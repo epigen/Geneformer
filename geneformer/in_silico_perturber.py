@@ -134,7 +134,7 @@ def forward_pass_single_cell(model, example_cell, layer_to_quant):
     example_cell.set_format(type="torch")
     input_data = example_cell["input_ids"]
     with torch.no_grad():
-        outputs = model(input_ids=input_data.to("cuda"))
+        outputs = model(input_ids=input_data.to(model.device))
     emb = torch.squeeze(outputs.hidden_states[layer_to_quant])
     del outputs
     return emb
@@ -341,11 +341,11 @@ def get_cell_state_avg_embs(
             input_data_minibatch = pad_tensor_list(
                 input_data_minibatch, max_len, pad_token_id, model_input_size
             )
-            attention_mask = gen_attention_mask(state_minibatch, max_len)
+            attention_mask = gen_attention_mask(state_minibatch, max_len, device=model.device)
 
             with torch.no_grad():
                 outputs = model(
-                    input_ids=input_data_minibatch.to("cuda"),
+                    input_ids=input_data_minibatch.to(model.device),
                     attention_mask=attention_mask,
                 )
 
@@ -360,7 +360,7 @@ def get_cell_state_avg_embs(
 
         state_embs = torch.cat(state_embs_list)
         avg_state_emb = mean_nonpadding_embs(
-            state_embs, torch.Tensor(original_lens).to("cuda")
+            state_embs, torch.Tensor(original_lens).to(model.device)
         )
         avg_state_emb = torch.mean(avg_state_emb, dim=0, keepdim=True)
         state_embs_dict[possible_state] = avg_state_emb
@@ -434,12 +434,12 @@ def quant_cos_sims(
         minibatch.set_format(type="torch")
 
         input_data_minibatch = minibatch["input_ids"]
-        attention_mask = gen_attention_mask(minibatch, max_len)
+        attention_mask = gen_attention_mask(minibatch, max_len, device=model.device)
 
         # extract embeddings for perturbation minibatch
         with torch.no_grad():
             outputs = model(
-                input_ids=input_data_minibatch.to("cuda"), attention_mask=attention_mask
+                input_ids=input_data_minibatch.to(model.device), attention_mask=attention_mask
             )
 
         return outputs, max_len
@@ -523,10 +523,10 @@ def quant_cos_sims(
                 original_emb = comparison_batch[i:max_range]
             else:
                 original_minibatch_lengths = torch.tensor(
-                    original_minibatch["length"], device="cuda"
+                    original_minibatch["length"], device=model.device
                 )
                 minibatch_lengths = torch.tensor(
-                    perturbation_minibatch["length"], device="cuda"
+                    perturbation_minibatch["length"], device=model.device
                 )
             for state in possible_states:
                 if perturb_group == False:
@@ -666,7 +666,7 @@ def pad_tensor_list(tensor_list, dynamic_or_constant, pad_token_id, model_input_
     return torch.stack(tensor_list)
 
 
-def gen_attention_mask(minibatch_encoding, max_len=None):
+def gen_attention_mask(minibatch_encoding, max_len=None, device="cuda"):
     if max_len == None:
         max_len = max(minibatch_encoding["length"])
     original_lens = minibatch_encoding["length"]
@@ -676,13 +676,13 @@ def gen_attention_mask(minibatch_encoding, max_len=None):
         else [1] * max_len
         for original_len in original_lens
     ]
-    return torch.tensor(attention_mask).to("cuda")
+    return torch.tensor(attention_mask).to(device)
 
 
 # get cell embeddings excluding padding
 def mean_nonpadding_embs(embs, original_lens):
     # mask based on padding lengths
-    mask = torch.arange(embs.size(1)).unsqueeze(0).to("cuda") < original_lens.unsqueeze(
+    mask = torch.arange(embs.size(1)).unsqueeze(0).to(embs.device) < original_lens.unsqueeze(
         1
     )
 
@@ -1250,7 +1250,7 @@ class InSilicoPerturber:
                 # update cos sims dict
                 # key is tuple of (perturbed_gene, affected_gene)
                 # or (perturbed_genes, "cell_emb") for avg cell emb change
-                cos_sims_data = cos_sims_data.to("cuda")
+                cos_sims_data = cos_sims_data.to(model.device)
                 max_padded_len = cos_sims_data.shape[1]
                 for j in range(cos_sims_data.shape[0]):
                     # remove padding before mean pooling cell embedding
@@ -1282,7 +1282,7 @@ class InSilicoPerturber:
                 for j in range(cos_sims_origin.shape[0]):
                     data_list = []
                     for data in list(cos_sims_data.values()):
-                        data_item = data.to("cuda")
+                        data_item = data.to(model.device)
                         data_list += [data_item[j].item()]
                     cos_sims_dict[(perturbed_genes, "cell_emb")] += [tuple(data_list)]
 
@@ -1335,7 +1335,7 @@ class InSilicoPerturber:
                             # update cos sims dict
                             # key is tuple of (perturbed_gene, affected_gene)
                             # or (perturbed_gene, "cell_emb") for avg cell emb change
-                            cos_sims_data = cos_sims_data.to("cuda")
+                            cos_sims_data = cos_sims_data.to(model.device)
                             for j in range(cos_sims_data.shape[0]):
                                 if self.tokens_to_perturb != "all":
                                     j_index = torch.tensor(indices_to_perturb[j])
@@ -1403,7 +1403,7 @@ class InSilicoPerturber:
 
                                 data_list = []
                                 for data in list(cos_sims_data.values()):
-                                    data_item = data.to("cuda")
+                                    data_item = data.to(model.device)
                                     cell_data = torch.mean(data_item[j]).item()
                                     data_list += [cell_data]
                                 cos_sims_dict[(perturbed_gene, "cell_emb")] += [
@@ -1435,7 +1435,7 @@ class InSilicoPerturber:
                         model_input_size,
                         self.nproc,
                     )
-                    cos_sims_data = cos_sims_data.to("cuda")
+                    cos_sims_data = cos_sims_data.to(model.device)
 
                     (
                         combo_perturbation_batch,
@@ -1464,7 +1464,7 @@ class InSilicoPerturber:
                         model_input_size,
                         self.nproc,
                     )
-                    combo_cos_sims_data = combo_cos_sims_data.to("cuda")
+                    combo_cos_sims_data = combo_cos_sims_data.to(model.device)
 
                     # update cos sims dict
                     # key is tuple of (perturbed_gene, "cell_emb") for avg cell emb change

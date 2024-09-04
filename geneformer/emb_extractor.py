@@ -103,8 +103,8 @@ def get_embs(
         )
 
         outputs = model(
-            input_ids=minibatch_input_data.to("cuda"),
-            attention_mask=gen_attention_mask({"length": minibatch_length}),
+            input_ids=minibatch_input_data.to(model.device),
+            attention_mask=gen_attention_mask({"length": minibatch_length},device=model.device),
         )
 
         embs_i = outputs.hidden_states[layer_to_quant]
@@ -148,7 +148,7 @@ def get_embs(
 
 def test_emb(model, example, layer_to_quant):
     with torch.no_grad():
-        outputs = model(input_ids=example.to("cuda"))
+        outputs = model(input_ids=example.to(model.device))
 
     embs_test = outputs.hidden_states[layer_to_quant]
     return embs_test.size()[2]
